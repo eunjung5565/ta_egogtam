@@ -4,10 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TA 에고그램 자아상태 검사</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --primary: #4f46e5; --bg: #f3f4f6; --white: #ffffff; }
-        body { font-family: 'Pretendard', sans-serif; background-color: var(--bg); margin: 0; padding: 20px; color: #1f2937; }
-        .container { max-width: 700px; margin: 0 auto; background: var(--white); padding: 40px; border-radius: 16px; shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif; background-color: var(--bg); margin: 0; padding: 20px; color: #1f2937; }
+        .container { max-width: 700px; margin: 0 auto; background: var(--white); padding: 40px; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
         h1 { text-align: center; color: var(--primary); margin-bottom: 10px; }
         .info { text-align: center; font-size: 0.9em; color: #6b7280; margin-bottom: 40px; line-height: 1.5; }
         .q-row { margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #f3f4f6; }
@@ -16,21 +17,23 @@
         .option { flex: 1; text-align: center; }
         .option input { display: none; }
         .option label { display: block; padding: 10px 5px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; cursor: pointer; font-size: 0.85em; transition: 0.2s; }
+        .option label:hover { background: #f3f4f6; }
         .option input:checked + label { background: var(--primary); color: white; border-color: var(--primary); }
-        button { width: 100%; padding: 20px; background: var(--primary); color: white; border: none; border-radius: 12px; font-size: 1.2em; font-weight: bold; cursor: pointer; margin-top: 20px; }
+        button { width: 100%; padding: 20px; background: var(--primary); color: white; border: none; border-radius: 12px; font-size: 1.2em; font-weight: bold; cursor: pointer; margin-top: 20px; transition: 0.2s; }
+        button:hover { background: #4338ca; }
         #result { display: none; margin-top: 40px; }
-        .chart-container { margin-top: 20px; }
-        .bar-wrapper { margin-bottom: 20px; }
-        .bar-info { display: flex; justify-content: space-between; margin-bottom: 5px; font-weight: bold; }
-        .bar-bg { background: #e5e7eb; height: 25px; border-radius: 12px; overflow: hidden; }
-        .bar-fill { height: 100%; background: var(--primary); width: 0%; transition: width 1s ease-out; }
+        .chart-container { margin-top: 30px; position: relative; height: 400px; }
+        .score-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-top: 30px; }
+        .score-item { background: #f9fafb; padding: 15px; border-radius: 10px; text-align: center; }
+        .score-label { font-size: 0.9em; color: #6b7280; margin-bottom: 5px; }
+        .score-value { font-size: 1.5em; font-weight: bold; color: var(--primary); }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h1>에고그램(TA) 진단</h1>
-    <p class="info">각 문항을 읽고 자신에게 해당되는 정도를 선택해 주세요.<br>(1)전혀 그렇지 않다 ~ (5)매우 그렇다 </p>
+    <p class="info">각 문항을 읽고 자신에게 해당되는 정도를 선택해 주세요.<br>(1)전혀 그렇지 않다 ~ (5)매우 그렇다</p>
     
     <div id="quiz"></div>
     <button onclick="calculate()">결과 확인하기</button>
@@ -38,12 +41,14 @@
     <div id="result">
         <hr>
         <h2 style="text-align: center;">나의 자아상태 그래프</h2>
-        <div class="chart-container" id="chart"></div>
+        <div class="chart-container">
+            <canvas id="radarChart"></canvas>
+        </div>
+        <div class="score-summary" id="scoreSummary"></div>
     </div>
 </div>
 
 <script>
-    // 질문 데이터 및 채점 기준 매핑 (문항 번호별 자아 상태 분류)
     const questions = [
         { id: 1, q: "다른 사람을 비판하기 보다 칭찬을 주로 한다", type: "NP" },
         { id: 2, q: "어떤 사건에 대해 잘 잘못을 가리지 않으면 마음이 편치 않다", type: "CP" },
@@ -100,7 +105,6 @@
     const quizContainer = document.getElementById('quiz');
     const labels = ["전혀 아니다", "아니다", "그저 그렇다", "그렇다", "매우 그렇다"];
 
-    // 퀴즈 렌더링
     questions.forEach(item => {
         const qHtml = `
             <div class="q-row">
@@ -117,6 +121,8 @@
         `;
         quizContainer.innerHTML += qHtml;
     });
+
+    let myChart = null;
 
     function calculate() {
         const scores = { CP: 0, NP: 0, A: 0, FC: 0, AC: 0 };
@@ -138,20 +144,91 @@
 
     function display(scores) {
         document.getElementById('result').style.display = 'block';
-        const chart = document.getElementById('chart');
-        chart.innerHTML = '';
         
-        const fullNames = { CP: "비판적 어버이(CP)", NP: "양육적 어버이(NP)", A: "성인(A)", FC: "자유로운 어린이(FC)", AC: "순응하는 어린이(AC)" };
+        const fullNames = { 
+            CP: "비판적 어버이", 
+            NP: "양육적 어버이", 
+            A: "성인", 
+            FC: "자유로운 어린이", 
+            AC: "순응하는 어린이" 
+        };
 
+        // 점수 요약 표시
+        const summaryContainer = document.getElementById('scoreSummary');
+        summaryContainer.innerHTML = '';
         for (let key in scores) {
-            const percentage = (scores[key] / 50) * 100; // 각 유형당 10문항, 만점 50점 기준
-            chart.innerHTML += `
-                <div class="bar-wrapper">
-                    <div class="bar-info"><span>${fullNames[key]}</span><span>${scores[key]}점</span></div>
-                    <div class="bar-bg"><div class="bar-fill" style="width: ${percentage}%"></div></div>
+            summaryContainer.innerHTML += `
+                <div class="score-item">
+                    <div class="score-label">${fullNames[key]}</div>
+                    <div class="score-value">${scores[key]}점</div>
                 </div>
             `;
         }
+
+        // 레이더 차트 생성
+        const ctx = document.getElementById('radarChart').getContext('2d');
+        
+        if (myChart) {
+            myChart.destroy();
+        }
+
+        myChart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: [
+                    '비판적 어버이(CP)',
+                    '양육적 어버이(NP)',
+                    '성인(A)',
+                    '자유로운 어린이(FC)',
+                    '순응하는 어린이(AC)'
+                ],
+                datasets: [{
+                    label: '나의 자아상태',
+                    data: [scores.CP, scores.NP, scores.A, scores.FC, scores.AC],
+                    backgroundColor: 'rgba(79, 70, 229, 0.2)',
+                    borderColor: 'rgba(79, 70, 229, 1)',
+                    borderWidth: 3,
+                    pointBackgroundColor: 'rgba(79, 70, 229, 1)',
+                    pointBorderColor: '#fff',
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: 'rgba(79, 70, 229, 1)',
+                    pointRadius: 5,
+                    pointHoverRadius: 7
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        max: 50,
+                        min: 0,
+                        ticks: {
+                            stepSize: 10,
+                            font: {
+                                size: 12
+                            }
+                        },
+                        pointLabels: {
+                            font: {
+                                size: 13,
+                                weight: 'bold'
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+
         window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     }
 </script>
